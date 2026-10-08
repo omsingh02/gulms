@@ -1,0 +1,43 @@
+[package]
+name = "gulms"
+version = "0.1.0"
+edition = "2024"
+authors = ["Om Singh"]
+rust-version = "1.88"
+description = "Fast, interactive command-line client for Moodle-based university LMS portals (Galgotias University by default)"
+readme = "README.md"
+repository = "https://github.com/omsingh02/gulms"
+homepage = "https://github.com/omsingh02/gulms"
+license = "MIT OR Apache-2.0"
+keywords = ["moodle", "lms", "cli", "university"]
+categories = ["command-line-utilities"]
+
+# `cargo binstall gulms` downloads the prebuilt binary from the GitHub release.
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/v{ version }/gulms-v{ version }-{ target }.tar.gz"
+bin-dir = "gulms-v{ version }-{ target }/{ bin }{ binary-ext }"
+pkg-fmt = "tgz"
+
+[package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
+pkg-url = "{ repo }/releases/download/v{ version }/gulms-v{ version }-{ target }.zip"
+pkg-fmt = "zip"
+
+[dependencies]
+base64 = "0.23.1"
+chrono = "0.4.45"
+clap = { version = "4.6.7", features = ["derive"] }
+clap_complete = "4.6.11"
+colored = "3.1.1"
+dirs = "7.0.0"
+fancy-regex = "0.19.2"
+imagesize = "0.15.0"
+indicatif = "0.18.6"
+inquire = "0.9.4"
+md-5 = "0.11.0"
+regex = "1.13.1"
+roxmltree = "0.21.1"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+sha2 = "0.11.0"
+ureq = { version = "3.4.2", features = ["json"] }
+zip = { version = "8.6.0", default-features = false, features = ["deflate"] }

@@ -1,0 +1,42 @@
+[
+ {
+  "slide_num": 1,
+  "title": "Introduction to Relational Databases",
+  "text_blocks": [
+   [
+    0,
+    "Core concepts and ACID properties"
+   ]
+  ],
+  "tables": [],
+  "graph_nodes": [],
+  "graph_edges": [],
+  "figures": [],
+  "markdown": "# Introduction to Relational Databases\n\n- Core concepts and ACID properties"
+ },
+ {
+  "slide_num": 2,
+  "title": "Database Comparison",
+  "text_blocks": [],
+  "tables": [
+   [
+    [
+     "Paradigm",
+     "ACID Support"
+    ],
+    [
+     "RDBMS",
+     "Strict"
+    ],
+    [
+     "NoSQL",
+     "Eventual"
+    ]
+   ]
+  ],
+  "graph_nodes": [],
+  "graph_edges": [],
+  "figures": [],
+  "markdown": "# Database Comparison\n\n\n| Paradigm | ACID Support |\n| --- | --- |\n| RDBMS | Strict |\n| NoSQL | Eventual |"
+ }
+]

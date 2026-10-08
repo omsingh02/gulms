@@ -6,8 +6,14 @@ use std::fs;
 use std::time::Instant;
 
 use crate::categorizer::clean_text;
+use crate::fsutil::atomic_write;
+use crate::http;
 use crate::models::{RawCourse, RawSection, SyncState};
 use crate::store::LmsStore;
+
+pub const NOT_SIGNED_IN: &str = "Not signed in. Run `gulms login` first.";
+pub const SESSION_EXPIRED: &str =
+    "Your session has expired or was revoked. Run `gulms login` to sign in again.";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SiteInfo {
@@ -28,6 +34,8 @@ pub struct EnrolledCourseSummary {
 }
 
 pub struct SyncStats {
+    /// Courses whose contents could not be fetched, with the reason.
+    pub failed: Vec<(String, String)>,
     pub checked_count: usize,
     pub updated_courses: Vec<String>,
     pub new_files_count: usize,
@@ -40,6 +48,56 @@ pub struct LmsClient {
     pub user_id: Option<u64>,
 }
 
+/// Run a sync against the LMS and print a summary. Returns `false` on failure.
+pub fn sync_and_report(store: &mut LmsStore, force: bool) -> bool {
+    println!(
+        "\n{} Running {} sync with Galgotias LMS...",
+        "🔄".cyan().bold(),
+        if force {
+            "full force"
+        } else {
+            "incremental delta"
+        }
+    );
+
+    let mut client = LmsClient::from_store(store);
+    match client.sync(store, force) {
+        Ok(stats) => {
+            println!(
+                "\n{} Sync completed in {:.2}s",
+                "✓".green().bold(),
+                stats.elapsed.as_secs_f64()
+            );
+            println!(
+                "  Checked: {} courses | Fetched: {} | New files: {}",
+                stats.checked_count,
+                stats.updated_courses.len(),
+                stats.new_files_count
+            );
+            if !force && !stats.updated_courses.is_empty() {
+                println!("  Updated: {}", stats.updated_courses.join(", ").dimmed());
+            }
+            if !stats.failed.is_empty() {
+                eprintln!(
+                    "\n{} {} course{} could not be fetched and will be retried on the next sync:",
+                    "⚠".yellow().bold(),
+                    stats.failed.len(),
+                    if stats.failed.len() == 1 { "" } else { "s" }
+                );
+                for (name, reason) in &stats.failed {
+                    eprintln!("  {}: {}", name.bold(), reason);
+                }
+                return false;
+            }
+            true
+        }
+        Err(e) => {
+            eprintln!("\n{} Sync failed: {}", "✗".red().bold(), e);
+            false
+        }
+    }
+}
+
 impl LmsClient {
     pub fn new(base_url: String, token: Option<String>, user_id: Option<u64>) -> Self {
         Self {
@@ -49,15 +107,20 @@ impl LmsClient {
         }
     }
 
+    pub fn from_store(store: &LmsStore) -> Self {
+        Self::new(
+            store.config.base_url.clone(),
+            store.config.token.clone(),
+            store.config.user_id,
+        )
+    }
+
     pub fn call(
         &self,
         wsfunction: &str,
         extra_params: &[(&str, &str)],
     ) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
-        let token = self
-            .token
-            .as_deref()
-            .ok_or("No token configured in ~/.config/gulms/config.json")?;
+        let token = self.token.as_deref().ok_or(NOT_SIGNED_IN)?;
 
         let url = format!("{}/webservice/rest/server.php", self.base_url);
 
@@ -68,14 +131,25 @@ impl LmsClient {
         ];
         form_data.extend_from_slice(extra_params);
 
-        let mut resp = ureq::post(&url)
-            .header("User-Agent", "Mozilla/5.0 (MoodleMobile; Android)")
-            .header("Accept", "application/json")
-            .send_form(form_data)?;
+        let mut resp = http::with_retries(|| {
+            http::agent()
+                .post(&url)
+                .header("Accept", "application/json")
+                .send_form(form_data.clone())
+        })
+        .map_err(|e| {
+            format!(
+                "could not reach {}: {} (check your internet connection)",
+                self.base_url, e
+            )
+        })?;
 
         let val: serde_json::Value = resp.body_mut().read_json()?;
 
         if let Some(err) = val.get("exception") {
+            if val.get("errorcode").and_then(|c| c.as_str()) == Some("invalidtoken") {
+                return Err(SESSION_EXPIRED.into());
+            }
             let msg = val
                 .get("message")
                 .and_then(|m| m.as_str())
@@ -129,7 +203,9 @@ impl LmsClient {
             Some(id) => id,
             None => {
                 let info = self.get_site_info()?;
-                let id = info.userid.ok_or("Could not retrieve user ID from Moodle")?;
+                let id = info
+                    .userid
+                    .ok_or("Could not retrieve user ID from Moodle")?;
                 self.user_id = Some(id);
                 store.config.user_id = Some(id);
                 if let Some(fn_str) = info.fullname {
@@ -159,6 +235,7 @@ impl LmsClient {
         };
 
         let mut updated_courses = Vec::new();
+        let mut failed: Vec<(String, String)> = Vec::new();
         let mut new_files_count = 0usize;
 
         // Progress bar for scanning courses
@@ -186,7 +263,7 @@ impl LmsClient {
             } else {
                 cname.clone()
             };
-            pb.set_message(format!("{}", label));
+            pb.set_message(label.clone());
 
             if needs_fetch {
                 // Collect existing files for diffing
@@ -211,7 +288,9 @@ impl LmsClient {
                                 for f in &m.contents {
                                     if let Some(ref fname) = f.filename {
                                         let key = (fname.clone(), f.filesize.unwrap_or(0));
-                                        if !existing_keys.is_empty() && !existing_keys.contains(&key) {
+                                        if !existing_keys.is_empty()
+                                            && !existing_keys.contains(&key)
+                                        {
                                             new_files_count += 1;
                                         }
                                     }
@@ -235,14 +314,7 @@ impl LmsClient {
                         );
                         updated_courses.push(label);
                     }
-                    Err(e) => {
-                        eprintln!(
-                            "  {} Failed to fetch contents for {}: {}",
-                            "⚠".yellow().bold(),
-                            label,
-                            e
-                        );
-                    }
+                    Err(e) => failed.push((label, e.to_string())),
                 }
             } else if let Some(entry) = cache_map.get_mut(&cid_str) {
                 entry.fullname = Some(cname);
@@ -259,11 +331,8 @@ impl LmsClient {
         pb.finish_and_clear();
 
         // 3. Save updated cache
-        if let Some(parent) = store.courses_cache_path.parent() {
-            fs::create_dir_all(parent)?;
-        }
         let cache_json = serde_json::to_string_pretty(&cache_map)?;
-        fs::write(&store.courses_cache_path, cache_json)?;
+        atomic_write(&store.courses_cache_path, cache_json.as_bytes(), false)?;
 
         // 4. Save sync state
         let now_ts = std::time::SystemTime::now()
@@ -278,7 +347,7 @@ impl LmsClient {
             new_files_count: Some(new_files_count),
         };
         let state_json = serde_json::to_string_pretty(&state)?;
-        fs::write(&store.sync_state_path, state_json)?;
+        atomic_write(&store.sync_state_path, state_json.as_bytes(), false)?;
 
         // 5. Reload courses in store
         let reloaded_store = LmsStore::load()?;
@@ -286,6 +355,7 @@ impl LmsClient {
         store.sync_state = Some(state);
 
         Ok(SyncStats {
+            failed,
             checked_count,
             updated_courses,
             new_files_count,

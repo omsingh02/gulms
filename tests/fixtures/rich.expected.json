@@ -1,0 +1,177 @@
+[
+ {
+  "slide_num": 1,
+  "title": "Normal Forms",
+  "text_blocks": [
+   [
+    0,
+    "First normal form"
+   ],
+   [
+    1,
+    "Atomic values"
+   ],
+   [
+    2,
+    "No repeating groups"
+   ],
+   [
+    0,
+    "Second line one\u000bsecond line two"
+   ]
+  ],
+  "tables": [],
+  "graph_nodes": [],
+  "graph_edges": [],
+  "figures": [],
+  "markdown": "# Normal Forms\n\n- First normal form\n  - Atomic values\n    - No repeating groups\n- Second line one\u000bsecond line two"
+ },
+ {
+  "slide_num": 2,
+  "title": "Keys",
+  "text_blocks": [],
+  "tables": [
+   [
+    [
+     "Key",
+     "Meaning",
+     "Example"
+    ],
+    [
+     "PK",
+     "Unique row id",
+     "roll_no"
+    ],
+    [
+     "FK",
+     "Link to parent",
+     "dept_id"
+    ]
+   ]
+  ],
+  "graph_nodes": [],
+  "graph_edges": [],
+  "figures": [
+   {
+    "size": [
+     240,
+     140
+    ],
+    "path": "figures/fig_s02_01.png",
+    "ocr_sample": "",
+    "ocr_lines": []
+   }
+  ],
+  "markdown": "# Keys\n\n\n| Key | Meaning | Example |\n| --- | --- | --- |\n| PK | Unique row id | roll_no |\n| FK | Link to parent | dept_id |\n\n\n> **[Figure 1]**: Technical Figure (240x140 px)\n> ![Technical Figure (240x140 px)](figures/fig_s02_01.png)"
+ },
+ {
+  "slide_num": 3,
+  "title": "yes",
+  "text_blocks": [],
+  "tables": [],
+  "graph_nodes": [
+   {
+    "id": "node_2",
+    "text": "Flowchart for the loop",
+    "geom": "rect",
+    "bbox": [
+     457200,
+     182880,
+     7315200,
+     731520
+    ]
+   },
+   {
+    "id": "node_3",
+    "text": "i = 0",
+    "geom": "flowChartProcess",
+    "bbox": [
+     914400,
+     1371600,
+     1828800,
+     731520
+    ]
+   },
+   {
+    "id": "node_4",
+    "text": "i < 10 ?",
+    "geom": "flowChartDecision",
+    "bbox": [
+     914400,
+     2743200,
+     1828800,
+     1097280
+    ]
+   },
+   {
+    "id": "node_5",
+    "text": "print(i)",
+    "geom": "flowChartProcess",
+    "bbox": [
+     4572000,
+     2834640,
+     1828800,
+     731520
+    ]
+   },
+   {
+    "id": "node_10",
+    "text": "Loop runs ten times",
+    "geom": "rect",
+    "bbox": [
+     4572000,
+     4572000,
+     2743200,
+     548640
+    ]
+   }
+  ],
+  "graph_edges": [],
+  "figures": [],
+  "markdown": "# yes\n\n\n```mermaid\nflowchart TD\n    node_2[\"Flowchart for the loop\"]\n    node_3[\"i = 0\"]\n    node_4{\"i < 10 ?\"}\n    node_5[\"print(i)\"]\n    node_10[\"Loop runs ten times\"]\n```"
+ },
+ {
+  "slide_num": 4,
+  "title": "",
+  "text_blocks": [],
+  "tables": [],
+  "graph_nodes": [
+   {
+    "id": "node_2",
+    "text": "Two plain boxes",
+    "geom": "rect",
+    "bbox": [
+     457200,
+     182880,
+     7315200,
+     731520
+    ]
+   },
+   {
+    "id": "node_3",
+    "text": "Left box",
+    "geom": "rect",
+    "bbox": [
+     914400,
+     1828800,
+     2743200,
+     914400
+    ]
+   },
+   {
+    "id": "node_4",
+    "text": "Right box",
+    "geom": "rect",
+    "bbox": [
+     4572000,
+     1828800,
+     2743200,
+     914400
+    ]
+   }
+  ],
+  "graph_edges": [],
+  "figures": [],
+  "markdown": "```mermaid\nflowchart TD\n    node_2[\"Two plain boxes\"]\n    node_3[\"Left box\"]\n    node_4[\"Right box\"]\n```"
+ }
+]

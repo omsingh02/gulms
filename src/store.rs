@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 
+use crate::fsutil::atomic_write;
 use crate::models::{Config, Course, PptMeta, RawCourse, SyncState};
 
 #[derive(Debug, Clone)]
@@ -23,43 +24,78 @@ pub struct LmsStore {
 }
 
 impl LmsStore {
-    pub fn default_paths() -> (PathBuf, PathBuf, PathBuf, PathBuf) {
-        let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/home/faulter"));
-        let config_dir = home.join(".config").join("gulms");
-        let cache_dir = home.join(".cache").join("gulms");
+    /// Config and cache locations. Defaults follow each OS's conventions
+    /// (`~/.config/gulms` and `~/.cache/gulms` on Linux); `GULMS_CONFIG_DIR` and
+    /// `GULMS_CACHE_DIR` override them.
+    pub fn default_paths()
+    -> Result<(PathBuf, PathBuf, PathBuf, PathBuf), Box<dyn std::error::Error>> {
+        let resolve = |var: &str, base: Option<PathBuf>| -> Result<PathBuf, String> {
+            match std::env::var_os(var).filter(|v| !v.is_empty()) {
+                Some(dir) => Ok(PathBuf::from(dir)),
+                None => base.map(|b| b.join("gulms")).ok_or_else(|| {
+                    format!("Could not determine a directory for {var}; set it explicitly")
+                }),
+            }
+        };
+        let config_dir = resolve("GULMS_CONFIG_DIR", dirs::config_dir())?;
+        let cache_dir = resolve("GULMS_CACHE_DIR", dirs::cache_dir())?;
 
-        (
+        Ok((
             config_dir.join("config.json"),
             cache_dir.join("courses.json"),
             cache_dir.join("ppt_meta.json"),
             cache_dir.join("sync_state.json"),
-        )
+        ))
     }
 
     pub fn load() -> Result<Self, Box<dyn std::error::Error>> {
         let (config_path, courses_cache_path, ppt_meta_path, sync_state_path) =
-            Self::default_paths();
+            Self::default_paths()?;
 
-        // 1. Config
+        // 1. Config. A malformed file is a hard error: silently falling back to
+        // defaults would let the next `save_config` overwrite the user's token.
         let config: Config = if config_path.exists() {
             let data = fs::read_to_string(&config_path)?;
-            serde_json::from_str(&data).unwrap_or_default()
+            serde_json::from_str(&data)
+                .map_err(|e| format!("Invalid config file {}: {}", config_path.display(), e))?
         } else {
             Config::default()
         };
 
-        // 2. Courses Cache
+        // The token is a credential: if an older version (or the user) left the file readable by
+        // others, quietly lock it down.
+        #[cfg(unix)]
+        if config.token.is_some() {
+            use std::os::unix::fs::PermissionsExt;
+            if let Ok(meta) = fs::metadata(&config_path)
+                && meta.permissions().mode() & 0o077 != 0
+                && fs::set_permissions(&config_path, fs::Permissions::from_mode(0o600)).is_ok()
+            {
+                eprintln!(
+                    "note: restricted {} to your account only (it holds your login token)",
+                    config_path.display()
+                );
+            }
+        }
+
+        // 2. Courses Cache (derived data, so a bad cache just means "run sync")
         let mut courses: Vec<Course> = Vec::new();
         if courses_cache_path.exists() {
             let data = fs::read_to_string(&courses_cache_path)?;
-            if let Ok(raw_dict) = serde_json::from_str::<HashMap<String, RawCourse>>(&data) {
-                let mut parsed: Vec<Course> = raw_dict
-                    .into_values()
-                    .map(Course::from_raw)
-                    .collect();
-                // Sort by ID or acronym
-                parsed.sort_by(|a, b| a.clean_name.cmp(&b.clean_name));
-                courses = parsed;
+            match serde_json::from_str::<HashMap<String, RawCourse>>(&data) {
+                Ok(raw_dict) => {
+                    courses = raw_dict.into_values().map(Course::from_raw).collect();
+                    courses.sort_by(|a, b| {
+                        a.clean_name
+                            .cmp(&b.clean_name)
+                            .then_with(|| a.id.cmp(&b.id))
+                    });
+                }
+                Err(e) => eprintln!(
+                    "warning: ignoring unreadable course cache {} ({}); run `sync --force` to rebuild it",
+                    courses_cache_path.display(),
+                    e
+                ),
             }
         }
 
@@ -91,16 +127,34 @@ impl LmsStore {
         })
     }
 
+    /// The config holds the auth token, so it is written owner-only and atomically.
     pub fn save_config(&self) -> Result<(), Box<dyn std::error::Error>> {
-        if let Some(parent) = self.config_path.parent() {
-            fs::create_dir_all(parent)?;
-        }
         let json_str = serde_json::to_string_pretty(&self.config)?;
-        fs::write(&self.config_path, json_str)?;
+        atomic_write(&self.config_path, json_str.as_bytes(), true)?;
         Ok(())
     }
 
-    pub fn save_selected_courses(&mut self, ids: Vec<u64>) -> Result<(), Box<dyn std::error::Error>> {
+    /// Persist lecture metadata (shared format; keys are `md5(fileurl)`).
+    pub fn save_ppt_meta(&self) -> Result<(), Box<dyn std::error::Error>> {
+        let sorted: std::collections::BTreeMap<_, _> = self.ppt_meta.iter().collect();
+        let json = serde_json::to_string_pretty(&sorted)?;
+        atomic_write(&self.ppt_meta_path, json.as_bytes(), false)?;
+        Ok(())
+    }
+
+    /// Forget the signed-in account and everything cached for it.
+    pub fn clear_account_data(&mut self) {
+        self.config.selected_course_ids.clear();
+        self.courses.clear();
+        self.sync_state = None;
+        let _ = fs::remove_file(&self.courses_cache_path);
+        let _ = fs::remove_file(&self.sync_state_path);
+    }
+
+    pub fn save_selected_courses(
+        &mut self,
+        ids: Vec<u64>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         self.config.selected_course_ids = ids;
         self.save_config()
     }
@@ -135,10 +189,10 @@ impl LmsStore {
                 return Some(pool[idx - 1]);
             }
             // By raw ID
-            if let Ok(id_val) = q.parse::<u64>() {
-                if let Some(c) = all_pool.iter().find(|c| c.id == id_val) {
-                    return Some(*c);
-                }
+            if let Ok(id_val) = q.parse::<u64>()
+                && let Some(c) = all_pool.iter().find(|c| c.id == id_val)
+            {
+                return Some(*c);
             }
         }
 
@@ -149,7 +203,10 @@ impl LmsStore {
         if let Some(c) = pool.iter().find(|c| c.acronym.to_uppercase() == q_upper) {
             return Some(*c);
         }
-        if let Some(c) = all_pool.iter().find(|c| c.acronym.to_uppercase() == q_upper) {
+        if let Some(c) = all_pool
+            .iter()
+            .find(|c| c.acronym.to_uppercase() == q_upper)
+        {
             return Some(*c);
         }
 
@@ -189,7 +246,10 @@ impl LmsStore {
             for mat in &course.materials {
                 let name_match = mat.name.to_lowercase().contains(&q_lower);
                 let file_match = mat.filename.to_lowercase().contains(&q_lower);
-                let sec_match = mat.sections.iter().any(|s| s.to_lowercase().contains(&q_lower));
+                let sec_match = mat
+                    .sections
+                    .iter()
+                    .any(|s| s.to_lowercase().contains(&q_lower));
 
                 if name_match || file_match || sec_match {
                     results.push(MaterialResult {
@@ -230,17 +290,15 @@ impl LmsStore {
     pub fn get_ppt_meta(&self, fileurl: &str) -> Option<&PptMeta> {
         let mut hasher = Md5::new();
         hasher.update(fileurl.as_bytes());
-        let hash = hasher.finalize().iter().map(|b| format!("{:02x}", b)).collect::<String>();
+        let hash = hasher
+            .finalize()
+            .iter()
+            .map(|b| format!("{:02x}", b))
+            .collect::<String>();
         self.ppt_meta.get(&hash)
     }
 
     pub fn download_dir(&self) -> PathBuf {
-        if let Some(ref d) = self.config.download_dir {
-            PathBuf::from(d)
-        } else {
-            dirs::download_dir()
-                .unwrap_or_else(|| dirs::home_dir().unwrap_or_default().join("Downloads"))
-                .join("gulms")
-        }
+        self.config.download_dir()
     }
 }

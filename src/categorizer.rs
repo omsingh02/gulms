@@ -44,18 +44,6 @@ impl Category {
             Category::Other => "📄",
         }
     }
-
-    pub fn all() -> &'static [Category] {
-        &[
-            Category::Slides,
-            Category::Textbooks,
-            Category::Notes,
-            Category::Syllabus,
-            Category::Code,
-            Category::WebLinks,
-            Category::Other,
-        ]
-    }
 }
 
 pub fn clean_text(text: &str) -> String {
@@ -71,7 +59,10 @@ pub fn clean_text(text: &str) -> String {
 
 pub fn clean_display_name(raw_name: &str) -> String {
     let cleaned = clean_text(raw_name);
-    let stripped = RE_COURSE_CODE_SUFFIX.replace_all(&cleaned, "").trim().to_string();
+    let stripped = RE_COURSE_CODE_SUFFIX
+        .replace_all(&cleaned, "")
+        .trim()
+        .to_string();
     if stripped.is_empty() {
         cleaned
     } else {
@@ -80,21 +71,37 @@ pub fn clean_display_name(raw_name: &str) -> String {
 }
 
 pub fn get_acronym(course_name: &str) -> String {
-    let cleaned = RE_PARENS.replace_all(&clean_text(course_name), "").to_string();
-    let stop_words: HashSet<&'static str> = [
-        "and", "with", "using", "of", "the", "for", "in", "to"
-    ].into_iter().collect();
+    let cleaned = RE_PARENS
+        .replace_all(&clean_text(course_name), "")
+        .to_string();
+    let stop_words: HashSet<&'static str> =
+        ["and", "with", "using", "of", "the", "for", "in", "to"]
+            .into_iter()
+            .collect();
 
     let mut acronym = String::new();
     for mat in RE_WORDS.find_iter(&cleaned) {
         let w = mat.as_str();
-        if !stop_words.contains(w.to_lowercase().as_str()) {
-            if let Some(ch) = w.chars().next() {
-                acronym.push(ch.to_ascii_uppercase());
-            }
+        if !stop_words.contains(w.to_lowercase().as_str())
+            && let Some(ch) = w.chars().next()
+        {
+            acronym.push(ch.to_ascii_uppercase());
         }
     }
     acronym
+}
+
+/// Short label for a course: the portal's own short code when it is a plain word
+/// like `DBMS`, otherwise the initials of the course name.
+pub fn course_acronym(fullname: &str, shortname: &str) -> String {
+    let short = shortname.trim();
+    let is_code =
+        (2..=8).contains(&short.chars().count()) && short.chars().all(|c| c.is_ascii_alphabetic());
+    if is_code {
+        short.to_ascii_uppercase()
+    } else {
+        get_acronym(fullname)
+    }
 }
 
 pub fn categorize_file(fname: &str, fsize: u64, mtype: &str) -> Category {
@@ -106,7 +113,11 @@ pub fn categorize_file(fname: &str, fsize: u64, mtype: &str) -> Category {
         .map(|s| format!(".{}", s.to_lowercase()))
         .unwrap_or_default();
 
-    if ext == ".xls" || ext == ".xlsx" || lower.contains("session plan") || lower.contains("syllabus") {
+    if ext == ".xls"
+        || ext == ".xlsx"
+        || lower.contains("session plan")
+        || lower.contains("syllabus")
+    {
         return Category::Syllabus;
     }
     if lower.contains("book")
@@ -120,8 +131,10 @@ pub fn categorize_file(fname: &str, fsize: u64, mtype: &str) -> Category {
     if ext == ".pptx" || ext == ".ppt" || ext == ".pps" || ext == ".ppsx" {
         return Category::Slides;
     }
-    if [".zip", ".rar", ".tar", ".gz", ".7z", ".java", ".py", ".c", ".cpp", ".sql"]
-        .contains(&ext.as_str())
+    if [
+        ".zip", ".rar", ".tar", ".gz", ".7z", ".java", ".py", ".c", ".cpp", ".sql",
+    ]
+    .contains(&ext.as_str())
     {
         return Category::Code;
     }
@@ -156,5 +169,33 @@ pub fn format_size(num_bytes: u64) -> String {
 
 pub fn sanitize_filename(name: &str) -> String {
     let stripped = RE_HTML_TAGS.replace_all(name, "").to_string();
-    RE_SAFE_FILENAME.replace_all(&stripped, "_").trim().to_string()
+    RE_SAFE_FILENAME
+        .replace_all(&stripped, "_")
+        .trim()
+        .to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_plain_short_code_becomes_the_acronym() {
+        assert_eq!(
+            course_acronym("Database Management Systems", "dbms"),
+            "DBMS"
+        );
+        assert_eq!(course_acronym("Data Structures", "DS"), "DS");
+    }
+
+    #[test]
+    fn codes_with_digits_or_dashes_fall_back_to_initials() {
+        assert_eq!(
+            course_acronym("Java Programming (E-R1UC303C)", "E-R1UC303C"),
+            "JP"
+        );
+        assert_eq!(course_acronym("Operating Systems", "CSE310"), "OS");
+        assert_eq!(course_acronym("Operating Systems", ""), "OS");
+        assert_eq!(course_acronym("Operating Systems", "A"), "OS");
+    }
 }

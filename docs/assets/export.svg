@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="737" height="217" viewBox="0 0 737 217" role="img" aria-label="gulms — study notes">
+<title>gulms — study notes</title>
+<rect x="0.5" y="0.5" width="736" height="216" rx="10" fill="#0d1117" stroke="#30363d"/>
+<path d="M0.5 10.5a10 10 0 0 1 10-10h716a10 10 0 0 1 10 10v27.5H0.5z" fill="#161b22"/>
+<circle cx="22" cy="19" r="6" fill="#ff5f56"/><circle cx="42" cy="19" r="6" fill="#ffbd2e"/><circle cx="62" cy="19" r="6" fill="#27c93f"/>
+<text x="368.5" y="24" fill="#8b949e" font-size="12.5" text-anchor="middle" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif">gulms — study notes</text>
+<g style="white-space:pre" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,'DejaVu Sans Mono',monospace" font-size="14" xml:space="preserve">
+<text x="20.0" y="68" fill="#3fb950" font-weight="700">$</text>
+<text x="36.8" y="68" fill="#e6edf3">gulms export DBMS 4</text>
+<text x="20.0" y="110" fill="#e6edf3" font-weight="700">🧾</text>
+<text x="45.2" y="110" fill="#e6edf3">Exporting study notes for [</text>
+<text x="272.0" y="110" fill="#56d4dd" font-weight="700">DBMS</text>
+<text x="305.6" y="110" fill="#e6edf3">]</text>
+<text x="322.4" y="110" fill="#e6edf3" font-weight="700">Database Management Systems</text>
+<text x="557.6" y="110" fill="#e6edf3">(1 lectures)...</text>
+<text x="36.8" y="152" fill="#56d4dd">Lec-04</text>
+<text x="95.6" y="152" fill="#e6edf3">Normal Forms</text>
+<text x="490.4" y="152" fill="#3fb950" font-weight="700">✓</text>
+<text x="507.2" y="152" fill="#e6edf3">Lec-04 - Normal Forms.pdf</text>
+<text x="20.0" y="194" fill="#e6edf3">Notes saved to:</text>
+<text x="154.4" y="194" fill="#e6edf3" font-weight="700">~/Downloads/gulms/DBMS/Study Notes</text>
+</g></svg>

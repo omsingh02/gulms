@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="569" height="385" viewBox="0 0 569 385" role="img" aria-label="gulms — doctor">
+<title>gulms — doctor</title>
+<rect x="0.5" y="0.5" width="568" height="384" rx="10" fill="#0d1117" stroke="#30363d"/>
+<path d="M0.5 10.5a10 10 0 0 1 10-10h548a10 10 0 0 1 10 10v27.5H0.5z" fill="#161b22"/>
+<circle cx="22" cy="19" r="6" fill="#ff5f56"/><circle cx="42" cy="19" r="6" fill="#ffbd2e"/><circle cx="62" cy="19" r="6" fill="#27c93f"/>
+<text x="284.5" y="24" fill="#8b949e" font-size="12.5" text-anchor="middle" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif">gulms — doctor</text>
+<g style="white-space:pre" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,'DejaVu Sans Mono',monospace" font-size="14" xml:space="preserve">
+<text x="20.0" y="68" fill="#3fb950" font-weight="700">$</text>
+<text x="36.8" y="68" fill="#e6edf3">gulms doctor</text>
+<text x="20.0" y="110" fill="#56d4dd" font-weight="700">═══</text>
+<text x="53.6" y="110" fill="#56d4dd" font-weight="700">gulms doctor</text>
+<text x="162.8" y="110" fill="#56d4dd" font-weight="700">═══</text>
+<text x="36.8" y="152" fill="#3fb950" font-weight="700">✓</text>
+<text x="53.6" y="152" fill="#e6edf3">Version                gulms 0.1.0 on linux/x86_64</text>
+<text x="36.8" y="173" fill="#3fb950" font-weight="700">✓</text>
+<text x="53.6" y="173" fill="#e6edf3">Config                 ~/.config/gulms/config.json</text>
+<text x="36.8" y="194" fill="#3fb950" font-weight="700">✓</text>
+<text x="53.6" y="194" fill="#e6edf3">Portal                 https://lms.example.edu is reachable</text>
+<text x="36.8" y="215" fill="#3fb950" font-weight="700">✓</text>
+<text x="53.6" y="215" fill="#e6edf3">Signed in              as Alex Morgan</text>
+<text x="36.8" y="236" fill="#3fb950" font-weight="700">✓</text>
+<text x="53.6" y="236" fill="#e6edf3">Courses                4 cached, last synced today</text>
+<text x="36.8" y="257" fill="#3fb950" font-weight="700">✓</text>
+<text x="53.6" y="257" fill="#e6edf3">Lectures               all 11 slide decks analysed</text>
+<text x="36.8" y="278" fill="#3fb950" font-weight="700">✓</text>
+<text x="53.6" y="278" fill="#e6edf3">Download folder        ~/Downloads/gulms</text>
+<text x="36.8" y="299" fill="#3fb950" font-weight="700">✓</text>
+<text x="53.6" y="299" fill="#e6edf3">PDF browser            /usr/bin/chromium</text>
+<text x="36.8" y="320" fill="#3fb950" font-weight="700">✓</text>
+<text x="53.6" y="320" fill="#e6edf3">OCR (tesseract)        found</text>
+<text x="20.0" y="362" fill="#3fb950" font-weight="700">✓</text>
+<text x="36.8" y="362" fill="#e6edf3">Everything looks good.</text>
+</g></svg>

@@ -81,7 +81,7 @@ say "Installing gulms $version ($target)"
 fetch "$base/$archive" "$tmp/$archive"
 fetch "$base/SHA256SUMS" "$tmp/SHA256SUMS"
 
-expected=$(awk -v f="$archive" '$2 == f { print $1 }' "$tmp/SHA256SUMS")
+expected=$(awk -v f="$archive" '{ name = $2; sub(/^\*/, "", name); sub(/\r$/, "", name); if (name == f) print $1 }' "$tmp/SHA256SUMS")
 [ -n "$expected" ] || die "no checksum listed for $archive"
 actual=$(sha256_of "$tmp/$archive")
 [ "$expected" = "$actual" ] || die "checksum mismatch for $archive; refusing to install"

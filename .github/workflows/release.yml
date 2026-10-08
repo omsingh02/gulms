@@ -38,7 +38,7 @@ jobs:
         shell: bash
         run: scripts/package.sh "$TAG" "${{ matrix.target }}" "${{ matrix.archive }}"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: dist-${{ matrix.target }}
           path: dist/*

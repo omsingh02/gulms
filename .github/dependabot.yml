@@ -11,3 +11,7 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    ignore:
+      # The ref in `dtolnay/rust-toolchain@1.88` is the Rust version under test, not an
+      # action version, so it must only change when we deliberately raise the MSRV.
+      - dependency-name: "dtolnay/rust-toolchain"

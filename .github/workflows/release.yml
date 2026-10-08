@@ -3,12 +3,16 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  # Dry run: builds and packages everything exactly like a release, but publishes nothing.
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 env:
   CARGO_TERM_COLOR: always
+  # A real tag when releasing; a placeholder for dry runs started by hand.
+  TAG: ${{ github.ref_type == 'tag' && github.ref_name || 'v0.0.0-dryrun' }}
 
 jobs:
   build:
@@ -32,7 +36,7 @@ jobs:
 
       - name: Package
         shell: bash
-        run: scripts/package.sh "$GITHUB_REF_NAME" "${{ matrix.target }}" "${{ matrix.archive }}"
+        run: scripts/package.sh "$TAG" "${{ matrix.target }}" "${{ matrix.archive }}"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -59,13 +63,13 @@ jobs:
           sha256sum gulms-* > SHA256SUMS
           cat SHA256SUMS
           cd ..
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${TAG#v}"
           awk -v v="$VERSION" '
             $0 ~ "^## \\[" v "\\]" { found = 1; next }
             found && /^## \[/ { exit }
             found { print }
           ' CHANGELOG.md > notes.md
-          [ -s notes.md ] || echo "Release $GITHUB_REF_NAME" > notes.md
+          [ -s notes.md ] || echo "Release $TAG" > notes.md
           {
             echo
             echo "### Install"
@@ -80,10 +84,17 @@ jobs:
           } >> notes.md
 
       - name: Create the release
+        if: github.ref_type == 'tag'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "$GITHUB_REF_NAME" dist/* \
-            --title "gulms ${GITHUB_REF_NAME}" \
+          gh release create "$TAG" dist/* \
+            --title "gulms ${TAG}" \
             --notes-file notes.md \
             --verify-tag
+
+      - name: Dry run summary
+        if: github.ref_type != 'tag'
+        run: |
+          echo "Dry run: nothing was published. These files would have been attached:"
+          ls -la dist

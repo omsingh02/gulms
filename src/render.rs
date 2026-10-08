@@ -12,6 +12,7 @@ use regex::Regex;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::LazyLock;
+use std::time::{Duration, Instant};
 
 const MERMAID_SRC: &str = "https://cdn.jsdelivr.net/npm/mermaid@10.9.8/dist/mermaid.min.js";
 const MERMAID_SRI: &str = "sha384-N3QqR/7q+xm3BGX+CBbNI8AUmRRqcsDzToy+0z1NLDI0QmTKW8zvwLvqulJgk3dP";
@@ -605,11 +606,17 @@ pub fn render_markdown_to_pdf(
     std::fs::write(&html_path, markdown_to_html(md_text, title, base_dir))
         .map_err(|e| format!("could not write temp file: {e}"))?;
 
-    let run = |sandbox: bool| -> Result<std::process::Output, String> {
+    let log_path = work.join("browser.log");
+    let run = |sandbox: bool| -> Result<(), String> {
+        let _ = std::fs::remove_file(out_pdf); // never mistake a stale file for a fresh one
         let mut cmd = Command::new(&browser);
         cmd.arg("--headless=new")
             .arg("--disable-gpu")
             .arg("--no-first-run")
+            .arg("--disable-extensions")
+            .arg("--disable-breakpad") // no crash-reporter helper left running afterwards
+            .arg("--use-mock-keychain") // macOS: never block on a keychain prompt
+            .arg("--password-store=basic")
             .arg(format!(
                 "--user-data-dir={}",
                 work.join("profile").display()
@@ -621,37 +628,95 @@ pub fn render_markdown_to_pdf(
             cmd.arg("--no-sandbox");
         }
         cmd.arg(format!("--print-to-pdf={}", out_pdf.display()))
-            .arg(file_url(&html_path))
-            .stdin(std::process::Stdio::null());
-        cmd.output()
-            .map_err(|e| format!("could not start {}: {e}", browser.display()))
+            .arg(file_url(&html_path));
+        run_browser(&mut cmd, out_pdf, &log_path, BROWSER_TIMEOUT)
+            .map_err(|e| format!("{}: {e}", browser.display()))
     };
 
     // Prefer the browser's sandbox; fall back only if it can't start (some
     // containers and locked-down systems), so the PDF still gets made.
-    let mut result = run(true);
-    let produced = |r: &Result<std::process::Output, String>| {
-        r.as_ref().is_ok_and(|o| o.status.success()) && out_pdf.is_file()
-    };
-    if !produced(&result) {
-        result = run(false);
-    }
-
-    let outcome = match &result {
-        Ok(o) if o.status.success() && out_pdf.is_file() => Ok(()),
-        Ok(o) => Err(format!(
-            "{} failed to print the PDF (exit {}): {}",
-            browser.display(),
-            o.status.code().map_or("?".to_string(), |c| c.to_string()),
-            String::from_utf8_lossy(&o.stderr)
-                .lines()
-                .last()
-                .unwrap_or("no details")
-        )),
-        Err(e) => Err(e.clone()),
-    };
+    let outcome = run(true).or_else(|first| {
+        run(false).map_err(|second| {
+            if first == second {
+                first
+            } else {
+                format!("{first} (retrying without the sandbox also failed: {second})")
+            }
+        })
+    });
     let _ = std::fs::remove_dir_all(&work);
     outcome
+}
+
+/// How long to wait for the browser before giving up.
+const BROWSER_TIMEOUT: Duration = Duration::from_secs(120);
+
+/// Run the browser until it has written `pdf`. Output goes to a log file rather than a
+/// pipe: some browsers leave helper processes (crash reporter, GPU) alive after the main
+/// process is done, and those hold a pipe open so that waiting for EOF would hang forever.
+fn run_browser(cmd: &mut Command, pdf: &Path, log: &Path, timeout: Duration) -> Result<(), String> {
+    let log_file =
+        std::fs::File::create(log).map_err(|e| format!("could not create a log file: {e}"))?;
+    let mut child = cmd
+        .stdin(std::process::Stdio::null())
+        .stdout(log_file.try_clone().map_err(|e| e.to_string())?)
+        .stderr(log_file)
+        .spawn()
+        .map_err(|e| format!("could not start: {e}"))?;
+
+    let started = Instant::now();
+    let mut last_size = 0u64;
+    let mut stable_polls = 0;
+    let tail = || {
+        std::fs::read_to_string(log)
+            .ok()
+            .and_then(|t| {
+                t.lines()
+                    .rev()
+                    .find(|l| !l.trim().is_empty())
+                    .map(str::to_string)
+            })
+            .unwrap_or_else(|| "no output".to_string())
+    };
+
+    loop {
+        if let Some(status) = child.try_wait().map_err(|e| e.to_string())? {
+            return if status.success() && pdf.is_file() {
+                Ok(())
+            } else {
+                Err(format!(
+                    "failed to print the PDF (exit {}): {}",
+                    status.code().map_or("?".to_string(), |c| c.to_string()),
+                    tail()
+                ))
+            };
+        }
+
+        // The PDF is complete once it stops growing; don't wait on lingering helpers.
+        let size = std::fs::metadata(pdf).map(|m| m.len()).unwrap_or(0);
+        if size > 0 && size == last_size {
+            stable_polls += 1;
+            if stable_polls >= 10 {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Ok(());
+            }
+        } else {
+            stable_polls = 0;
+            last_size = size;
+        }
+
+        if started.elapsed() > timeout {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(format!(
+                "did not finish within {} seconds: {}",
+                timeout.as_secs(),
+                tail()
+            ));
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
 }
 
 #[cfg(test)]
@@ -819,5 +884,79 @@ mod tests {
             "PDF should carry a navigable outline"
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(unix)]
+    mod browser_process {
+        use super::super::*;
+        use std::os::unix::fs::PermissionsExt;
+
+        /// A stand-in "browser": a shell script run with the arguments the real one gets.
+        fn fake_browser(body: &str) -> (PathBuf, PathBuf) {
+            static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+            let dir = std::env::temp_dir().join(format!(
+                "gulms-fakebrowser-{}-{}",
+                std::process::id(),
+                NEXT.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+            ));
+            std::fs::create_dir_all(&dir).unwrap();
+            let script = dir.join("browser.sh");
+            std::fs::write(&script, format!("#!/bin/sh\n{body}\n")).unwrap();
+            std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+            (script, dir)
+        }
+
+        fn run(body: &str, timeout: Duration) -> (Result<(), String>, Duration) {
+            let (script, dir) = fake_browser(body);
+            let pdf = dir.join("out.pdf");
+            let started = Instant::now();
+            let result = run_browser(&mut Command::new(&script), &pdf, &dir.join("log"), timeout);
+            let elapsed = started.elapsed();
+            let _ = std::fs::remove_dir_all(&dir);
+            (result, elapsed)
+        }
+
+        #[test]
+        fn a_lingering_helper_process_does_not_hang_us() {
+            // Writes the PDF and exits, but leaves a background child holding stdout/stderr
+            // (like Chrome's crash reporter). A pipe-based wait would block until it dies.
+            let (result, elapsed) = run(
+                r#"printf '%%PDF-1.4 fake' > "$(dirname "$0")/out.pdf"; (sleep 20 &); exit 0"#,
+                Duration::from_secs(10),
+            );
+            assert!(result.is_ok(), "{result:?}");
+            assert!(elapsed < Duration::from_secs(5), "took {elapsed:?}");
+        }
+
+        #[test]
+        fn a_browser_that_finishes_the_pdf_but_never_exits_is_stopped() {
+            let (result, elapsed) = run(
+                r#"printf '%%PDF-1.4 fake' > "$(dirname "$0")/out.pdf"; sleep 20"#,
+                Duration::from_secs(10),
+            );
+            assert!(result.is_ok(), "{result:?}");
+            assert!(elapsed < Duration::from_secs(6), "took {elapsed:?}");
+        }
+
+        #[test]
+        fn a_browser_that_hangs_without_output_times_out() {
+            let (result, elapsed) = run("sleep 20", Duration::from_millis(700));
+            let err = result.unwrap_err();
+            assert!(err.contains("did not finish"), "{err}");
+            assert!(elapsed < Duration::from_secs(5), "took {elapsed:?}");
+        }
+
+        #[test]
+        fn a_failing_browser_reports_its_last_output_line() {
+            let (result, _) = run(
+                "echo 'sandbox unavailable' >&2; exit 3",
+                Duration::from_secs(10),
+            );
+            let err = result.unwrap_err();
+            assert!(
+                err.contains("exit 3") && err.contains("sandbox unavailable"),
+                "{err}"
+            );
+        }
     }
 }

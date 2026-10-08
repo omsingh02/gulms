@@ -40,7 +40,7 @@ try {
     $zip = Get-ReleaseFile $Archive
     $sums = Get-ReleaseFile 'SHA256SUMS'
 
-    $line = Get-Content $sums | Where-Object { $_ -match ("\s" + [regex]::Escape($Archive) + "$") } | Select-Object -First 1
+    $line = Get-Content $sums | Where-Object { $_ -match ("[\s*]" + [regex]::Escape($Archive) + "\s*$") } | Select-Object -First 1
     if (-not $line) { throw "no checksum listed for $Archive" }
     $expected = ($line -split '\s+')[0].ToLower()
     $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $zip).Hash.ToLower()
